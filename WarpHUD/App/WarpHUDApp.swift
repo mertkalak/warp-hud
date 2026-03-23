@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isIndicatorProgrammaticMove = false
     private var settingsVisible = false
     private var settingsLastClosed: Date = .distantPast
+    private var cwdResolver: CWDResolver!
+    private var feedbackPanel: TooltipPanel!
+    private var feedbackTimer: Timer?
     private var hotkeyMonitor: Any?
     private var isDragging = false
     private var dragDebounce: Timer?
@@ -35,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel = HUDPanel(content: contentView)
         tooltipPanel = TooltipPanel()
         activeTabPanel = ActiveTabPanel()
+
+        feedbackPanel = TooltipPanel()
 
         settingsPanel = SettingsPanel(state: hudState, onClose: { [weak self] in
             self?.hideSettings()
@@ -99,6 +104,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             self?.refresh()
         }
+
+        cwdResolver = CWDResolver()
+        cwdResolver.start()
 
         setupHotkeys()
 
@@ -295,14 +303,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsLastClosed = Date()
     }
 
-    // MARK: - Global hotkeys (Cmd+Ctrl+W: clear, Cmd+Ctrl+R: reload)
+    // MARK: - Global hotkeys (Cmd+Ctrl+W: clear, Cmd+Ctrl+E: reload)
 
     private func setupHotkeys() {
         hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags.contains([.command, .control]) else { return }
             switch event.keyCode {
-            case 15: // R
+            case 14: // E
                 DispatchQueue.main.async { self?.relaunchApp() }
             case 13: // W
                 DispatchQueue.main.async { self?.clearSessions() }
@@ -328,16 +336,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         hudState.load()
+        showFeedback("Cleared")
     }
 
     private func relaunchApp() {
-        let appPath = "/Applications/WarpHUD.app"
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        task.arguments = [appPath]
-        try? task.run()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        showFeedback("Restarting…")
+        let execPath = Bundle.main.executablePath ?? CommandLine.arguments[0]
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: execPath)
+            try? process.run()
             NSApplication.shared.terminate(nil)
+        }
+    }
+
+    private func showFeedback(_ text: String) {
+        feedbackTimer?.invalidate()
+        let midX = panel.frame.midX
+        feedbackPanel.show(text: text, anchorScreenX: midX, hudPanelFrame: panel.frame)
+        feedbackTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
+            self?.feedbackPanel.hide()
         }
     }
 }
