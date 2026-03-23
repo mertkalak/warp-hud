@@ -3,6 +3,9 @@ import SwiftUI
 
 final class HUDPanel: NSPanel {
     var onMove: ((CGPoint) -> Void)?
+    private var isDraggable = false
+    private var dragStartMouseLocation: NSPoint?
+    private var dragStartOrigin: NSPoint?
 
     init<Content: View>(content: Content) {
         super.init(
@@ -40,7 +43,37 @@ final class HUDPanel: NSPanel {
     }
 
     func updateDraggable(isPinned: Bool) {
-        isMovableByWindowBackground = !isPinned
+        isDraggable = !isPinned
+    }
+
+    // Manual drag: NSHostingView consumes all mouse events, so
+    // isMovableByWindowBackground never fires. Intercept in sendEvent
+    // before SwiftUI, then forward so clicks/hover still work.
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            if isDraggable {
+                dragStartMouseLocation = NSEvent.mouseLocation
+                dragStartOrigin = frame.origin
+            }
+        case .leftMouseDragged:
+            if isDraggable,
+               let startMouse = dragStartMouseLocation,
+               let startOrigin = dragStartOrigin {
+                let current = NSEvent.mouseLocation
+                let newOrigin = NSPoint(
+                    x: startOrigin.x + (current.x - startMouse.x),
+                    y: startOrigin.y + (current.y - startMouse.y)
+                )
+                setFrameOrigin(newOrigin)
+            }
+        case .leftMouseUp:
+            dragStartMouseLocation = nil
+            dragStartOrigin = nil
+        default:
+            break
+        }
+        super.sendEvent(event)
     }
 
     func position(relativeTo warpFrame: CGRect) {
