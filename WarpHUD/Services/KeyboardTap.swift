@@ -197,12 +197,8 @@ final class KeyboardTap {
                     }
                     notifyChanged()
                 } else {
-                    // Title didn't change — still register it as a placeholder
-                    for g in 1...digit {
-                        if !FileManager.default.fileExists(atPath: Self.sessionDir + "/\(g)") {
-                            writeSession(g, "Tab \(g)")
-                        }
-                    }
+                    // Title didn't change — no such tab in Warp, revert
+                    writeCurrentTab(nil)
                     notifyChanged()
                 }
             }
