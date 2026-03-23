@@ -230,7 +230,8 @@ final class KeyboardTap {
         // Poll for meaningful title
         let titleBefore = getWarpTitle()
         var attempts = 0
-        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [self] timer in
+        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
             attempts += 1
             if let title = getWarpTitle(),
                title != titleBefore,

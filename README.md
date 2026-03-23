@@ -143,7 +143,7 @@ export BASH_ENV="/path/to/warp-hud/scripts/bash_cwd_capture.sh"
 | Shortcut | Action |
 |----------|--------|
 | Cmd+1-9 | Switch tabs (detected by WarpHUD) |
-| Cmd+Ctrl+R | Reload WarpHUD |
+| Cmd+Ctrl+E | Reload WarpHUD |
 | Cmd+Ctrl+W | Clear all sessions |
 
 ## Architecture
@@ -156,6 +156,7 @@ WarpHUD/
 │   └── HUDState.swift          # @Observable single source of truth
 ├── Services/
 │   ├── AppWatcher.swift        # NSWorkspace focus tracking
+│   ├── CWDResolver.swift       # lsof-based CWD discovery + TTY assignment
 │   ├── KeyboardTap.swift       # CGEvent tap for Cmd+digit
 │   ├── StatsMonitor.swift      # CPU/memory monitoring
 │   └── WarpWindow.swift        # Warp window geometry
@@ -163,9 +164,12 @@ WarpHUD/
     ├── HUDPanel.swift          # NSPanel (floating, non-activating)
     ├── HUDView.swift           # Main SwiftUI view
     ├── TabCard.swift           # Individual session card
-    ├── TooltipPanel/View.swift # Hover tooltip
-    ├── ActiveTabPanel/View.swift # Floating current-tab indicator
-    ├── SettingsPanel/View.swift # Settings popover
+    ├── TooltipPanel.swift      # Hover tooltip (NSPanel)
+    ├── TooltipView.swift       # Hover tooltip (SwiftUI)
+    ├── ActiveTabPanel.swift    # Floating current-tab indicator (NSPanel)
+    ├── ActiveTabView.swift     # Floating current-tab indicator (SwiftUI)
+    ├── SettingsPanel.swift     # Settings popover (NSPanel)
+    ├── SettingsView.swift      # Settings popover (SwiftUI)
     ├── StatsView.swift         # CPU/memory display
     └── PinButton.swift         # Pin/unpin toggle
 ```

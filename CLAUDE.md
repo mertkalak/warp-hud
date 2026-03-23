@@ -60,13 +60,11 @@ warp-hud/
 │   │   ├── Session.swift          # Tab session data model
 │   │   └── HUDState.swift         # @Observable, single source of truth
 │   ├── Services/
-│   │   ├── FileWatcher.swift      # Watch ~/.claude-hud/ for changes
-│   │   ├── KeyboardTap.swift      # CGEvent tap for Cmd+digit, Cmd+T/W
 │   │   ├── AppWatcher.swift       # NSWorkspace focus tracking (show/hide HUD)
-│   │   ├── CWDResolver.swift      # lsof + .cwd file reading
+│   │   ├── CWDResolver.swift      # lsof-based CWD discovery + TTY auto-assignment
+│   │   ├── KeyboardTap.swift      # CGEvent tap for Cmd+digit, Cmd+T/W
+│   │   ├── StatsMonitor.swift     # CPU/memory usage polling
 │   │   └── WarpWindow.swift       # Track Warp window position/size
-│   └── Utilities/
-│       └── ShellTask.swift        # Async shell command runner
 ├── scripts/                        # Existing shell scripts (data layer)
 │   ├── waiting-signal.sh
 │   ├── bash_cwd_capture.sh
@@ -81,7 +79,7 @@ warp-hud/
 
 ### Key design decisions
 1. **SwiftUI for rendering** — `.animation(.easeInOut)` replaces 100+ lines of manual Lua animation
-2. **@Observable pattern** — HUDState is the single source of truth, FileWatcher updates it, SwiftUI re-renders
+2. **@Observable pattern** — HUDState is the single source of truth, polling timer updates it, SwiftUI re-renders
 3. **No private APIs** — CGWindowListCopyWindowInfo for window geometry
 4. **Swift Package Manager** — No Xcode project, just Package.swift
 5. **Reference init.lua** for exact colors, sizes, and behavior
