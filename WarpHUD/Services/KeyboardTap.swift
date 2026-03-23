@@ -179,6 +179,7 @@ final class KeyboardTap {
             }
         } else {
             // Unregistered tab: register it
+            let previousTab = readCurrentTab()
             writeCurrentTab(digit)
             let titleBefore = getWarpTitle()
 
@@ -197,8 +198,8 @@ final class KeyboardTap {
                     }
                     notifyChanged()
                 } else {
-                    // Title didn't change — no such tab in Warp, revert
-                    writeCurrentTab(nil)
+                    // Title didn't change — no such tab in Warp, restore previous
+                    writeCurrentTab(previousTab)
                     notifyChanged()
                 }
             }
