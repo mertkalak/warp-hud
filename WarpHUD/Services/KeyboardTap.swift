@@ -189,19 +189,28 @@ final class KeyboardTap {
                 }
             }
         } else {
-            // Unregistered tab: register optimistically, then verify it exists
-            // by checking if Warp's title changed (indicating a real tab switch).
+            // Unregistered tab: register optimistically, verify via title change.
             let previousTab = readCurrentTab()
-            let titleBefore = getWarpTitle()
 
             writeSession(digit, "Tab \(digit)")
             writeCurrentTab(digit)
             notifyChanged()
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [self] in
+            // Capture title NOW (before Warp processes the switch)
+            let titleBefore = getWarpTitle()
+
+            // Verify after 300ms — enough time for Warp to complete the switch
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
                 let titleAfter = getWarpTitle()
-                let titleChanged = titleAfter != nil && titleAfter != titleBefore
-                let wasAlreadyHere = previousTab == nil || previousTab == digit
+                // Strip status prefixes (⠐, ✳) so Claude state changes don't
+                // look like tab switches. Both must be non-nil.
+                let titleChanged: Bool
+                if let ta = titleAfter, let tb = titleBefore {
+                    titleChanged = Self.stripStatusPrefix(ta) != Self.stripStatusPrefix(tb)
+                } else {
+                    titleChanged = false
+                }
+                let wasAlreadyHere = previousTab == digit
 
                 if titleChanged || wasAlreadyHere {
                     // Tab exists — fill gaps below so tabs 1..<digit exist
@@ -447,7 +456,13 @@ final class KeyboardTap {
     }
 
     private func isGenericTitle(_ title: String) -> Bool {
-        let clean = title.replacingOccurrences(of: "^[^a-zA-Z0-9]+", with: "", options: .regularExpression).lowercased()
+        let clean = Self.stripStatusPrefix(title).lowercased()
         return clean == "claude code" || clean == "claude"
+    }
+
+    /// Strip leading non-alphanumeric characters (status indicators like ⠐, ✳, etc.)
+    /// so title comparisons aren't affected by Claude state changes.
+    private static func stripStatusPrefix(_ title: String) -> String {
+        title.replacingOccurrences(of: "^[^a-zA-Z0-9]+", with: "", options: .regularExpression)
     }
 }

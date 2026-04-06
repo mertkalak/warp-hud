@@ -364,10 +364,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(atPath: dir) else { return }
         for file in files {
-            // Remove session files (1-9), .tty, .lock, .active, .waiting, .done, .cwd, current
+            // Remove session files (1-9), .tty, .lock, .active, .waiting, .done, .cwd
+            // Keep "current" so tab verification knows which tab was last active.
             let path = dir + "/" + file
-            if file == "current"
-                || file.range(of: #"^\d+$"#, options: .regularExpression) != nil
+            if file.range(of: #"^\d+$"#, options: .regularExpression) != nil
                 || file.hasSuffix(".tty") || file.hasSuffix(".lock")
                 || file.hasSuffix(".active") || file.hasSuffix(".waiting")
                 || file.hasSuffix(".done") || file.hasSuffix(".cwd") {
