@@ -49,6 +49,8 @@ final class KeyboardTap {
     var hudPanelFrame: CGRect = .zero
     /// Updated by AppDelegate — maps tab ID → midX in panel-local coords.
     var cardMidXs: [Int: CGFloat] = [:]
+    /// Set to true when the HUD panel is visible; false when hidden.
+    var hudVisible = false
 
     fileprivate var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -56,10 +58,16 @@ final class KeyboardTap {
     /// Singleton for C callback access (CGEventTapCallBack can't capture context reliably)
     fileprivate static var shared: KeyboardTap?
 
+    /// Set after `start()` — true if the CGEvent tap was created successfully.
+    private(set) var tapCreated = false
+
     init() {}
 
-    func start() {
-        guard eventTap == nil else { return }
+    /// Starts the event tap. Returns `true` if the tap was created, `false` if
+    /// accessibility permission is missing.
+    @discardableResult
+    func start() -> Bool {
+        guard eventTap == nil else { return tapCreated }
         KeyboardTap.shared = self
 
         let mask: CGEventMask =
@@ -76,8 +84,9 @@ final class KeyboardTap {
         )
 
         guard let eventTap else {
-            // tap creation failed
-            return
+            NSLog("[WarpHUD] CGEvent tap creation FAILED — accessibility permission missing")
+            tapCreated = false
+            return false
         }
 
         runLoopSource = CFMachPortCreateRunLoopSource(nil, eventTap, 0)
@@ -85,7 +94,9 @@ final class KeyboardTap {
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         }
         CGEvent.tapEnable(tap: eventTap, enable: true)
-        // tap ready
+        NSLog("[WarpHUD] CGEvent tap created and enabled")
+        tapCreated = true
+        return true
     }
 
     func stop() {
@@ -104,7 +115,7 @@ final class KeyboardTap {
     /// Returns true if the click was consumed (hit a tab card).
     @discardableResult
     fileprivate func handleMouseClick(_ event: CGEvent) -> Bool {
-        guard !hudPanelFrame.isEmpty, !cardMidXs.isEmpty else { return false }
+        guard hudVisible, !hudPanelFrame.isEmpty, !cardMidXs.isEmpty else { return false }
 
         let cgPoint = event.location
         let screenH = NSScreen.main?.frame.height ?? 0
@@ -178,27 +189,36 @@ final class KeyboardTap {
                 }
             }
         } else {
-            // Unregistered tab: register it
+            // Unregistered tab: register optimistically, then verify it exists
+            // by checking if Warp's title changed (indicating a real tab switch).
             let previousTab = readCurrentTab()
-            writeCurrentTab(digit)
             let titleBefore = getWarpTitle()
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [self] in
+            writeSession(digit, "Tab \(digit)")
+            writeCurrentTab(digit)
+            notifyChanged()
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [self] in
                 let titleAfter = getWarpTitle()
-                if titleAfter != nil && titleAfter != titleBefore {
-                    for g in 1...digit {
+                let titleChanged = titleAfter != nil && titleAfter != titleBefore
+                let wasAlreadyHere = previousTab == nil || previousTab == digit
+
+                if titleChanged || wasAlreadyHere {
+                    // Tab exists — fill gaps below so tabs 1..<digit exist
+                    for g in 1..<digit {
                         if !FileManager.default.fileExists(atPath: Self.sessionDir + "/\(g)") {
                             writeSession(g, "Tab \(g)")
                         }
                     }
-                    if let title = titleAfter, isMeaningfulTitle(title) {
+                    // Learn meaningful title from Warp
+                    if !isLocked(digit),
+                       let title = titleAfter, isMeaningfulTitle(title), !isGenericTitle(title) {
                         writeSession(digit, title)
-                    } else {
-                        writeSession(digit, "Tab \(digit)")
                     }
                     notifyChanged()
                 } else {
-                    // Title didn't change — no such tab in Warp, restore previous
+                    // Tab doesn't exist in Warp — remove the optimistic registration
+                    try? FileManager.default.removeItem(atPath: Self.sessionDir + "/\(digit)")
                     writeCurrentTab(previousTab)
                     notifyChanged()
                 }
@@ -361,11 +381,14 @@ final class KeyboardTap {
     }
 
     private func getWarpTitle() -> String? {
-        // Use NSWorkspace to find Warp, then CGWindowList for title
+        // Primary: Accessibility API (works with Accessibility permission we already have)
+        if let title = getWarpTitleViaAccessibility() {
+            return title
+        }
+        // Fallback: CGWindowList (requires Screen Recording permission)
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             return nil
         }
-        // Find the largest Warp window at layer 0 (main window, not toolbar)
         var bestName: String?
         var bestArea: CGFloat = 0
 
@@ -385,6 +408,36 @@ final class KeyboardTap {
             }
         }
         return bestName
+    }
+
+    private func getWarpTitleViaAccessibility() -> String? {
+        let warpApp = NSWorkspace.shared.runningApplications.first {
+            $0.bundleIdentifier == "dev.warp.Warp-Stable"
+                || $0.bundleIdentifier == "dev.warp.Warp"
+                || $0.localizedName == "Warp"
+                || $0.localizedName == "stable"
+        }
+        guard let warpApp else { return nil }
+
+        let appRef = AXUIElementCreateApplication(warpApp.processIdentifier)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement] else { return nil }
+
+        // Use the focused window, or first window as fallback
+        var focusedRef: CFTypeRef?
+        let focusedWindow: AXUIElement?
+        if AXUIElementCopyAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, &focusedRef) == .success {
+            focusedWindow = (focusedRef as! AXUIElement)
+        } else {
+            focusedWindow = windows.first
+        }
+        guard let window = focusedWindow else { return nil }
+
+        var titleRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef) == .success,
+              let title = titleRef as? String, !title.isEmpty else { return nil }
+        return title
     }
 
     private func isMeaningfulTitle(_ title: String?) -> Bool {

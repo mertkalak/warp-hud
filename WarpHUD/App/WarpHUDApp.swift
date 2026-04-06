@@ -110,11 +110,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupHotkeys()
 
-        // Start keyboard tap once (stays running — listenOnly is low overhead)
-        keyboardTap.start()
+        // Start keyboard tap — prompt for accessibility if needed
+        startKeyboardTapWithAccessibilityCheck()
 
         if appWatcher.isWarpFocused {
             showPanel()
+        }
+    }
+
+    // MARK: - Accessibility
+
+    private var accessibilityPollTimer: Timer?
+
+    private func startKeyboardTapWithAccessibilityCheck() {
+        if keyboardTap.start() { return }
+
+        // Trigger the system accessibility prompt
+        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+        let trusted = AXIsProcessTrustedWithOptions(opts)
+
+        if !trusted {
+            showAccessibilityAlert()
+            // Poll until the user grants permission
+            accessibilityPollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+                guard let self else { timer.invalidate(); return }
+                if AXIsProcessTrusted() {
+                    timer.invalidate()
+                    self.accessibilityPollTimer = nil
+                    self.keyboardTap.start()
+                    NSLog("[WarpHUD] Accessibility granted — event tap started")
+                }
+            }
+        }
+    }
+
+    private func showAccessibilityAlert() {
+        let alert = NSAlert()
+        alert.messageText = "WarpHUD Needs Accessibility Permission"
+        alert.informativeText = "WarpHUD uses accessibility to detect keyboard shortcuts (Cmd+1–9, Cmd+T/W) and track your Warp tabs.\n\nPlease enable WarpHUD in System Settings → Privacy & Security → Accessibility."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Later")
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
+            }
         }
     }
 
@@ -125,20 +167,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hudState.load()
             showPanel()
         } else {
-            panel.orderOut(nil)
-            tooltipPanel.hide()
-            activeTabPanel.hide()
-            hideSettings()
+            hidePanel()
         }
+    }
+
+    private func hidePanel() {
+        panel.orderOut(nil)
+        tooltipPanel.hide()
+        activeTabPanel.hide()
+        hideSettings()
+        keyboardTap.hudVisible = false
     }
 
     private func refresh() {
         hudState.load()
         guard appWatcher.isWarpFocused, !hudState.sessions.isEmpty else {
-            panel.orderOut(nil)
-            tooltipPanel.hide()
-            activeTabPanel.hide()
-            hideSettings()
+            hidePanel()
             return
         }
         showPanel()
@@ -146,10 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPanel() {
         guard !hudState.sessions.isEmpty else {
-            panel.orderOut(nil)
-            tooltipPanel.hide()
-            activeTabPanel.hide()
-            hideSettings()
+            hidePanel()
             return
         }
 
@@ -168,15 +209,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isProgrammaticMove = false
             hudState.saveCustomPosition(panel.frame.origin)
         } else {
-            panel.orderOut(nil)
-            tooltipPanel.hide()
-            activeTabPanel.hide()
-            hideSettings()
+            hidePanel()
             return
         }
 
         panel.updateDraggable(isPinned: hudState.isPinned)
         panel.orderFrontRegardless()
+        keyboardTap.hudVisible = true
 
         // Feed panel position to keyboard tap for click detection
         keyboardTap.hudPanelFrame = panel.frame
