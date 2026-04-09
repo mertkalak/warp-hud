@@ -37,8 +37,15 @@ enum WarpWindow {
 
         guard let cgRect = bestRect else { return nil }
 
-        // CG coordinates (top-left origin) → Cocoa coordinates (bottom-left origin)
-        let screenH = NSScreen.main?.frame.height ?? 0
+        // CG coordinates (top-left origin of the PRIMARY display) →
+        // Cocoa global coordinates (bottom-left origin of the primary display).
+        // NSScreen.main is the screen containing the key window — unreliable for
+        // LSUIElement apps and on multi-monitor setups. We need the primary screen
+        // (the one whose Cocoa frame.origin == .zero), which owns the menu bar
+        // and anchors the CG coordinate space.
+        let primary = NSScreen.screens.first(where: { $0.frame.origin == .zero })
+            ?? NSScreen.screens.first
+        let screenH = primary?.frame.height ?? 0
         return CGRect(
             x: cgRect.origin.x,
             y: screenH - cgRect.origin.y - cgRect.height,

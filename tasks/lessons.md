@@ -45,3 +45,25 @@
 **Fix:** Register immediately with "Tab N", then poll for a meaningful title in the background.
 
 **Rule:** Prefer optimistic registration with lazy enrichment over pessimistic validation for user-initiated actions.
+
+---
+
+## 2026-04-07: Phantom tabs from nil previousTab
+
+**Problem:** Pressing Cmd+4 with only 2-3 tabs created a phantom tab that never disappeared.
+
+**Root cause:** `clearSessions()` deleted the `current` file. After clear, `readCurrentTab()` returned nil. The verification logic `wasAlreadyHere = previousTab == nil || previousTab == digit` treated nil as "already here", skipping all title-change checks.
+
+**Fix:** (1) Preserve `current` through clear. (2) Change to `wasAlreadyHere = previousTab == digit` — nil means "unknown", not "already here".
+
+**Rule:** State files that serve as verification baselines must survive clear/reset operations. Never treat "unknown" as a positive signal.
+
+---
+
+## 2026-04-07: Two-step delay breaks valid tab detection
+
+**Problem:** A two-step settle-then-check delay (150ms + 150ms) was added to handle rapid keypresses. But by 150ms, Warp had already completed the current switch, so both readings showed the same title — causing valid tabs to be unregistered.
+
+**Fix:** Reverted to single-delay: capture titleBefore immediately at keypress time, check titleAfter at 300ms.
+
+**Rule:** When detecting state changes, capture the BEFORE state immediately — don't wait. Delays should only be on the AFTER side. Two-step delays that try to "settle" the before state also settle the change you're trying to detect.

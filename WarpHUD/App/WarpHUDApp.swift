@@ -196,6 +196,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let size = panel.contentView?.fittingSize ?? .zero
 
+        guard let warpFrame = WarpWindow.frame() else {
+            hidePanel()
+            return
+        }
+
+        // If Warp moved (drag, resize, or monitor change — including across
+        // launches), translate the user-set custom positions by the same delta
+        // so the HUD and indicator follow Warp instead of getting stranded on
+        // the old screen. lastWarpOrigin is persisted in UserDefaults, so this
+        // also corrects the position on first launch after Warp moved while
+        // WarpHUD was not running.
+        if let last = hudState.lastWarpOrigin {
+            let dx = warpFrame.origin.x - last.x
+            let dy = warpFrame.origin.y - last.y
+            if dx != 0 || dy != 0 {
+                if let pos = hudState.customPosition {
+                    hudState.saveCustomPosition(CGPoint(x: pos.x + dx, y: pos.y + dy))
+                }
+                if let ipos = hudState.indicatorPosition {
+                    hudState.indicatorPosition = CGPoint(x: ipos.x + dx, y: ipos.y + dy)
+                }
+            }
+        }
+        hudState.lastWarpOrigin = warpFrame.origin
+
         if let pos = hudState.customPosition {
             let newFrame = NSRect(origin: pos, size: size)
             if panel.frame != newFrame {
@@ -203,14 +228,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 panel.setFrame(newFrame, display: true)
                 isProgrammaticMove = false
             }
-        } else if let warpFrame = WarpWindow.frame() {
+        } else {
             isProgrammaticMove = true
             panel.position(relativeTo: warpFrame)
             isProgrammaticMove = false
             hudState.saveCustomPosition(panel.frame.origin)
-        } else {
-            hidePanel()
-            return
         }
 
         panel.updateDraggable(isPinned: hudState.isPinned)

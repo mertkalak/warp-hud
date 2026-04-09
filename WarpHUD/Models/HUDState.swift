@@ -65,6 +65,21 @@ final class HUDState {
         }
     }
 
+    /// Warp window origin at the time we last positioned the HUD.
+    /// Persisted so that on launch we can detect monitor/position changes
+    /// since the previous session and translate customPosition accordingly.
+    var lastWarpOrigin: CGPoint? {
+        didSet {
+            if let p = lastWarpOrigin {
+                UserDefaults.standard.set(Double(p.x), forKey: "hudLastWarpX")
+                UserDefaults.standard.set(Double(p.y), forKey: "hudLastWarpY")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "hudLastWarpX")
+                UserDefaults.standard.removeObject(forKey: "hudLastWarpY")
+            }
+        }
+    }
+
     private let sessionDir: String
 
     init(sessionDir: String? = nil) {
@@ -106,6 +121,15 @@ final class HUDState {
             )
         } else {
             customPosition = nil
+        }
+
+        if defaults.object(forKey: "hudLastWarpX") != nil {
+            lastWarpOrigin = CGPoint(
+                x: defaults.double(forKey: "hudLastWarpX"),
+                y: defaults.double(forKey: "hudLastWarpY")
+            )
+        } else {
+            lastWarpOrigin = nil
         }
     }
 
